@@ -109,4 +109,12 @@ while True:
     print("Final:", result)
 
     if result in CLASS_COLORS:
-        c1, c2 = CLASS_COLORS[re
+        c1, c2 = CLASS_COLORS[result]
+        set_pattern(c1, c2)
+    else:
+        clear_leds()
+
+    time.sleep(DISPLAY_SECONDS)
+    clear_leds()
+    while button.is_pressed:
+        time.sleep(0.1)
