@@ -16,7 +16,7 @@ FRAME_COUNT = 3
 FRAME_DELAY = 0.15
 DISPLAY_SECONDS = 5
 LED_COUNT = 105
-CONF_THRESHOLD = 0.45
+CONF_THRESHOLD = 0.8
 INPUT_SIZE = 224
 
 LABELS = ["pants", "shirt", "shoes"]   # Roboflow order: 0=pants, 1=shirt, 2=shoes
@@ -40,6 +40,10 @@ def set_pattern(c1, c2):
     for i in range(LED_COUNT):
         r, g, b = c1 if i % 2 == 0 else c2
         strip.set_led_color(i, r, g, b)
+    strip.update_strip()
+
+def set_solid(r, g, b):
+    strip.fill_strip(r, g, b)
     strip.update_strip()
 
 # =====================
@@ -98,7 +102,7 @@ def classify():
 # =====================
 # GPIO + LOOP
 # =====================
-button = Button(GPIO_PIN)
+button = Button(GPIO_PIN, bounce_time=0.05)
 print("Ready.")
 clear_leds()
 
@@ -112,7 +116,8 @@ while True:
         c1, c2 = CLASS_COLORS[result]
         set_pattern(c1, c2)
     else:
-        clear_leds()
+        print("Not confident — red")
+        set_solid(255, 0, 0)   # unsure / low confidence
 
     time.sleep(DISPLAY_SECONDS)
     clear_leds()
