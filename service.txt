@@ -1,0 +1,17 @@
+[Unit]
+Description=Hammie garment classifier LED demo
+After=multi-user.target
+
+[Service]
+Type=simple
+User=ktran06
+WorkingDirectory=/home/ktran06/Desktop/YOLO/cox-hackathon-yolo
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/bin/python /home/ktran06/Desktop/YOLO/cox-hackathon-yolo/classifier.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
