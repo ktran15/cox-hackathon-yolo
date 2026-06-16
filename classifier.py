@@ -1,132 +1,182 @@
-```python
 import time
 from collections import Counter
 
-import numpy as np
 import cv2
+import numpy as np
+import onnxruntime as ort
 
 from gpiozero import Button
 from picamera2 import Picamera2
-from ultralytics import YOLO
 from pi5neo import Pi5Neo
 
-# -------------------------
+
+# =====================
 # CONFIG
-# -------------------------
+# =====================
 
 MODEL_PATH = "best.onnx"
+
 GPIO_PIN = 17
 
 FRAME_COUNT = 3
 FRAME_DELAY = 0.15
-DISPLAY_TIME = 5
+DISPLAY_SECONDS = 5
 
-LED_COUNT = 105
+LED_COUNT = 180
 
-# -------------------------
-# LED SETUP
-# -------------------------
+LABELS = [
+    "shirt",
+    "pants",
+    "shoes"
+]
+
+
+# =====================
+# LED
+# =====================
 
 strip = Pi5Neo("/dev/spidev0.0", LED_COUNT, 800)
 
-# -------------------------
-# CAMERA SETUP
-# -------------------------
-
-cam = Picamera2()
-cam.configure(cam.create_preview_configuration(main={"size": (640, 480)}))
-cam.start()
-
-# -------------------------
-# MODEL
-# -------------------------
-
-model = YOLO(MODEL_PATH)
-
-# -------------------------
-# GPIO SWITCH
-# -------------------------
-
-button = Button(GPIO_PIN)
-
-# -------------------------
-# COLORS
-# -------------------------
-
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-RED = (255, 0, 0)
-YELLOW = (255, 255, 0)
-PURPLE = (255, 0, 255)
 OFF = (0, 0, 0)
 
-CLASS_MAP = {
-    "shirt": (GREEN, BLUE),
-    "pants": (GREEN, RED),
-    "shoes": (YELLOW, PURPLE)
+CLASS_COLORS = {
+    "shirt": ((0, 255, 0), (0, 0, 255)),       # green blue
+    "pants": ((0, 255, 0), (255, 0, 0)),       # green red
+    "shoes": ((255, 255, 0), (255, 0, 255))    # yellow purple
 }
 
-# -------------------------
-# LED FUNCTIONS
-# -------------------------
 
-def clear():
+def clear_leds():
     for i in range(LED_COUNT):
         strip.set_led_color(i, OFF)
     strip.update_strip()
 
 
-def alternate(c1, c2):
+def set_pattern(c1, c2):
     for i in range(LED_COUNT):
-        strip.set_led_color(i, c1 if i % 2 == 0 else c2)
+        color = c1 if i % 2 == 0 else c2
+        strip.set_led_color(i, color)
+
     strip.update_strip()
 
-# -------------------------
-# CLASSIFICATION
-# -------------------------
 
-def classify_3_frames():
+# =====================
+# MODEL
+# =====================
+
+session = ort.InferenceSession(
+    MODEL_PATH,
+    providers=["CPUExecutionProvider"]
+)
+
+input_name = session.get_inputs()[0].name
+
+
+def preprocess(frame):
+
+    img = cv2.resize(frame, (224, 224))
+
+    img = img.astype(np.float32)
+
+    img /= 255.0
+
+    img = np.transpose(img, (2, 0, 1))
+
+    img = np.expand_dims(img, axis=0)
+
+    return img
+
+
+def predict(frame):
+
+    inp = preprocess(frame)
+
+    output = session.run(
+        None,
+        {
+            input_name: inp
+        }
+    )
+
+    cls = np.argmax(output[0])
+
+    return LABELS[cls]
+
+
+# =====================
+# CAMERA
+# =====================
+
+camera = Picamera2()
+
+camera.configure(
+    camera.create_preview_configuration(
+        main={"size": (640, 480)}
+    )
+)
+
+camera.start()
+
+time.sleep(2)
+
+
+# =====================
+# VOTING
+# =====================
+
+def classify():
+
     votes = []
 
     for _ in range(FRAME_COUNT):
 
-        frame = cam.capture_array()
+        frame = camera.capture_array()
 
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        pred = predict(frame)
 
-        result = model.predict(frame, verbose=False)[0]
+        print("Frame:", pred)
 
-        label = result.names[int(result.probs.top1)]
-
-        votes.append(label)
+        votes.append(pred)
 
         time.sleep(FRAME_DELAY)
 
     return Counter(votes).most_common(1)[0][0]
 
-# -------------------------
-# MAIN LOOP
-# -------------------------
 
-clear()
-print("System ready... waiting for switch")
+# =====================
+# GPIO
+# =====================
+
+button = Button(GPIO_PIN)
+
+
+# =====================
+# LOOP
+# =====================
+
+print("Ready.")
+
+clear_leds()
 
 while True:
 
     button.wait_for_press()
 
-    print("Triggered!")
+    print("Switch triggered")
 
-    cls = classify_3_frames()
-    print("Detected:", cls)
+    result = classify()
 
-    if cls in CLASS_MAP:
-        c1, c2 = CLASS_MAP[cls]
-        alternate(c1, c2)
+    print("Final:", result)
 
-        time.sleep(DISPLAY_TIME)
+    if result in CLASS_COLORS:
 
-        clear()
+        c1, c2 = CLASS_COLORS[result]
 
-    time.sleep(0.2)
-```
+        set_pattern(c1, c2)
+
+    time.sleep(DISPLAY_SECONDS)
+
+    clear_leds()
+
+    while button.is_pressed:
+        time.sleep(0.1)
